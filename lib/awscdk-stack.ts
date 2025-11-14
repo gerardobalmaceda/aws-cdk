@@ -1,68 +1,56 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
+import { ApacheServer } from './apache-server-construct';
 
 export class IaasStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    // Crear VPC
     const vpc = new ec2.Vpc(this, 'MyVpc', { maxAzs: 2 });
-    const sg = new ec2.SecurityGroup(this, 'MySecurityGroup', {
-      vpc,
-      description: 'Permitir acceso SSH',
-      allowAllOutbound: true,
-    });
-    sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), 'Permitir SSH');
-    sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'Permitir HTTP');
-    const userData = ec2.UserData.forLinux();
-    userData.addCommands(
-      '#!/bin/bash',
-      'exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1',
-      'echo "=== Inicio de UserData Script ==="',
-      '',
-      '# Actualizar sistema',
-      'dnf update -y || echo "Update failed, continuing..."',
-      '',
-      '# Instalar Apache',
-      'echo "Instalando Apache HTTP Server..."',
-      'dnf install -y httpd',
-      '',
-      '# Habilitar e iniciar Apache',
-      'echo "Iniciando Apache..."',
-      'systemctl enable httpd',
-      'systemctl start httpd',
-      '',
-      '# Verificar estado',
-      'systemctl status httpd --no-pager',
-      '',
-      'echo "=== UserData Script Completado ==="'
-    );
 
-    const instance = new ec2.Instance(this, 'MyInstanceApache', {
+    // Opción 1: Usar el construct con configuración por defecto
+    // Solo necesitas la VPC!
+    const webServer = new ApacheServer(this, 'MyApacheServer', {
+      vpc,
+    });
+
+    // Opción 2: Ejemplo con configuración personalizada
+    // Descomenta este bloque para crear un segundo servidor con config custom
+    /*
+    const customServer = new ApacheServer(this, 'CustomApacheServer', {
       vpc,
       instanceType: ec2.InstanceType.of(
-        ec2.InstanceClass.T2,
-        ec2.InstanceSize.MICRO
+        ec2.InstanceClass.T3,
+        ec2.InstanceSize.SMALL
       ),
-      machineImage: ec2.MachineImage.latestAmazonLinux2023(),
-      securityGroup: sg,
-      userData,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
-      associatePublicIpAddress: true,
+      allowedPorts: [22, 80, 443, 8080],
+      securityGroupDescription: 'Security group para servidor personalizado',
+      customHtmlContent: `
+        <!DOCTYPE html>
+        <html>
+        <head><title>Mi Servidor Custom</title></head>
+        <body>
+          <h1>Este es mi servidor personalizado!</h1>
+          <p>Configurado con el construct ApacheServer</p>
+        </body>
+        </html>
+      `,
+      additionalUserDataCommands: [
+        '# Instalar utilidades adicionales',
+        'dnf install -y git vim',
+        'echo "Utilidades adicionales instaladas"',
+      ],
     });
 
-    // Outputs
-    new cdk.CfnOutput(this, 'InstancePublicIP', {
-      value: instance.instancePublicIp,
-      description: 'IP pública de la instancia EC2',
-    });
-
-    new cdk.CfnOutput(this, 'WebsiteURL', {
-      value: `http://${instance.instancePublicIp}`,
-      description: 'URL del servidor web Apache',
-    });
+    // Agregar regla adicional al servidor custom
+    customServer.addIngressRule(
+      ec2.Peer.ipv4('10.0.0.0/16'),
+      ec2.Port.tcp(3306),
+      'Permitir MySQL desde VPC'
+    );
+    */
   }
 }
 
